@@ -8,52 +8,94 @@
 #include <windows.h>
 #include <conio.h>
 #include <random>
+#include <vector>
 
-std::mutex m;
-
-void math(int cycle)
+class Process
 {
-    m.lock();
+protected:
+    std::mutex m;    
 
-    auto start = std::chrono::steady_clock::now();
+    int flows = 1;
+    int max_flows = 0;
+    int cycles = 0;
 
     int value = 0;
     std::random_device rd;
     std::mt19937 gen{ rd() };
+public:
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    COORD position = { 0, 0 };
+    std::vector<int> x_pos;
 
-    std::thread::id this_id = std::this_thread::get_id();
-    std::cout << this_id << ": ";
-
-    for (int i = 0; i <= cycle; ++i)
+    Process(int max_flows_, int cycles_) 
     {
-        //m.lock();
-        std::uniform_int_distribution <> dis(0, 1000);
-        value = dis(gen);
-        std::cout << "|";
-        std::this_thread::sleep_for(std::chrono::milliseconds(value));
-        //m.unlock();
+        max_flows_ = max_flows;
+        cycles_ = cycles;
     }
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << " - поток закончил свою работу за " << elapsed_seconds.count() << " секунд." << std::endl;
-    m.unlock();
-}
+
+    void print(int pos_num, int cycles)
+    {
+        m.lock();
+        std::uniform_int_distribution <> dis(100, 1000);
+        value = dis(gen);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(value));
+
+        position.X = 0;
+        position.Y = pos_num;
+        SetConsoleCursorPosition(hConsole, position);
+
+        std::thread::id this_id = std::this_thread::get_id();
+        std::cout << "Поток " << pos_num + 1 << " (" << this_id << ")" << ": ";
+        m.unlock();
+
+        auto start = std::chrono::steady_clock::now();
+
+        for (int i = 0; i < cycles; ++i)
+        {
+            std::uniform_int_distribution <> dis(300, 1000);
+            value = dis(gen);
+            std::this_thread::sleep_for(std::chrono::milliseconds(value));
+            m.lock();
+            position.X = x_pos[pos_num];
+            position.Y = pos_num;
+            SetConsoleCursorPosition(hConsole, position);
+            std::cout << "|";
+            ++x_pos[pos_num];
+            m.unlock();
+        }
+
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed_seconds = end - start;
+        std::cout << " - поток закончил свою работу за " << elapsed_seconds.count() << " секунд." << std::endl;
+    }
+};
 
 int main(int argc, char** argv)
 {
     setlocale(LC_ALL, "Russian");
 
-    int cycles = 10;
+    int flows_num = 5;
+    int cycles_num = 10;
 
-    std::thread t1(math, cycles);
-    std::thread t2(math, cycles);
-    std::thread t3(math, cycles);
-    std::thread t4(math, cycles);
+    Process process(flows_num, cycles_num);
 
-    t1.join();
-    t2.join();
-    t3.join();
-    t4.join();
+    std::vector<std::thread> threads(flows_num);
 
+    for (unsigned i = 0; i < flows_num; ++i)
+    {
+        threads[i] = std::thread(&Process::print, &process, i, cycles_num);
+        process.x_pos.push_back(20);
+    }
+
+    for (unsigned i = 0; i < flows_num; ++i)
+    {
+        threads[i].join();
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    process.position.X = 0;
+    process.position.Y = flows_num + 2;
+    SetConsoleCursorPosition(process.hConsole, process.position);
     return 0;
 }
